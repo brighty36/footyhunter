@@ -1,24 +1,29 @@
 import { useMemo, useState } from 'react';
-import { CategoryColumn } from './components/CategoryColumn';
 import { playersData } from './data/players';
-import { BEST_SCORE_KEY, CATEGORIES, ROUND_SIZE } from './game/constants';
-import { createRankMap, scoreRound } from './game/ranking';
-import type { Assignment, CategoryKey, RoundResult } from './game/types';
+import { BEST_SCORE_KEY, CATEGORIES } from './game/constants';
+import { createRankMap } from './game/ranking';
+import type { CategoryKey } from './game/types';
 import './styles.css';
 
-const getRandomRoundPlayers = () => {
-  const shuffled = [...playersData].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, ROUND_SIZE);
+type PickedPlayer = {
+  id: string;
+  name: string;
+  club: string;
+  nationality: string;
+  position: string;
+  category: CategoryKey;
+  rank: number;
 };
+
+const shufflePlayers = () => [...playersData].sort(() => Math.random() - 0.5);
 
 const initialBestScore = Number(localStorage.getItem(BEST_SCORE_KEY));
 
 function App() {
-  const [roundPlayers, setRoundPlayers] = useState(getRandomRoundPlayers);
-  const [assignments, setAssignments] = useState<Record<string, Assignment>>({});
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [results, setResults] = useState<RoundResult[] | null>(null);
-  const [totalScore, setTotalScore] = useState<number | null>(null);
+  const [deck, setDeck] = useState(shufflePlayers);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [skipUsed, setSkipUsed] = useState(false);
+  const [pickedPlayers, setPickedPlayers] = useState<PickedPlayer[]>([]);
   const [bestScore, setBestScore] = useState<number | null>(Number.isFinite(initialBestScore) ? initialBestScore : null);
 
   const rankMaps = useMemo(
@@ -31,161 +36,162 @@ function App() {
     []
   );
 
-  const hasSkipped = Object.values(assignments).some((item) => item.skipped);
+  const usedCategories = new Set(pickedPlayers.map((pick) => pick.category));
+  const gameFinished = usedCategories.size === CATEGORIES.length;
+  const currentPlayer = !gameFinished ? deck[currentIndex] : null;
+  const totalScore = pickedPlayers.reduce((sum, row) => sum + row.rank, 0);
 
-  const grouped = CATEGORIES.reduce<Record<string, typeof roundPlayers>>(
-    (acc, category) => {
-      acc[category.key] = roundPlayers.filter((player) => assignments[player.id]?.category === category.key);
-      return acc;
-    },
-    {}
-  );
-
-  const unassigned = roundPlayers.filter((player) => !assignments[player.id]?.category);
-
-  const setCategoryForPlayer = (playerId: string, category?: CategoryKey) => {
-    setAssignments((prev) => ({
-      ...prev,
-      [playerId]: {
-        ...prev[playerId],
-        category,
-        skipped: prev[playerId]?.skipped && category ? false : prev[playerId]?.skipped
-      }
-    }));
-  };
-
-  const onSubmit = () => {
-    const activePlayers = roundPlayers.filter((player) => !assignments[player.id]?.skipped);
-    const incomplete = activePlayers.some((player) => {
-      const row = assignments[player.id];
-      return !row?.category || !row.guessedRank;
-    });
-
-    if (incomplete) {
-      alert('Assign a category and rank for every non-skipped player.');
+  const assignCategory = (category: CategoryKey) => {
+    if (!currentPlayer || usedCategories.has(category)) {
       return;
     }
 
-    const scored = scoreRound(roundPlayers, assignments, rankMaps);
-    setResults(scored.results);
-    setTotalScore(scored.total);
+    const rank = rankMaps[category].get(currentPlayer.id);
+    if (!rank) {
+      return;
+    }
 
-    if (bestScore === null || scored.total < bestScore) {
-      setBestScore(scored.total);
-      localStorage.setItem(BEST_SCORE_KEY, String(scored.total));
+    const nextPicks = [
+      ...pickedPlayers,
+      {
+        id: currentPlayer.id,
+        name: currentPlayer.name,
+        club: currentPlayer.club,
+        nationality: currentPlayer.nationality,
+        position: currentPlayer.position,
+        category,
+        rank
+      }
+    ];
+
+    setPickedPlayers(nextPicks);
+    setCurrentIndex((prev) => prev + 1);
+
+    if (nextPicks.length === CATEGORIES.length) {
+      const nextTotal = nextPicks.reduce((sum, row) => sum + row.rank, 0);
+      if (bestScore === null || nextTotal < bestScore) {
+        setBestScore(nextTotal);
+        localStorage.setItem(BEST_SCORE_KEY, String(nextTotal));
+      }
     }
   };
 
-  const resetRound = () => {
-    setRoundPlayers(getRandomRoundPlayers());
-    setAssignments({});
-    setDraggedId(null);
-    setResults(null);
-    setTotalScore(null);
+  const skipPlayer = () => {
+    if (skipUsed || gameFinished) {
+      return;
+    }
+    setSkipUsed(true);
+    setCurrentIndex((prev) => prev + 1);
+  };
+
+  const newRound = () => {
+    setDeck(shufflePlayers());
+    setCurrentIndex(0);
+    setSkipUsed(false);
+    setPickedPlayers([]);
   };
 
   return (
     <main className="app">
       <header>
         <h1>FootyHunter</h1>
-        <p>Drag players into a category, guess rank, and chase the lowest score.</p>
+        <p>Players appear one-by-one. Pick one category per player. Category locks after use.</p>
         <div className="scorebar">
-          <span>Round size: {ROUND_SIZE}</span>
+          <span>Categories left: {CATEGORIES.length - usedCategories.size}</span>
+          <span>Skip used: {skipUsed ? 'Yes' : 'No'}</span>
           <span>Best score: {bestScore ?? '—'}</span>
-          {totalScore !== null && <span>Latest score: {totalScore}</span>}
         </div>
       </header>
 
-      <section className="board">
-        <CategoryColumn
-          title="Unassigned"
-          players={unassigned}
-          assignments={assignments}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={() => draggedId && setCategoryForPlayer(draggedId)}
-          onDragStart={setDraggedId}
-          onRankChange={(playerId, rank) =>
-            setAssignments((prev) => ({ ...prev, [playerId]: { ...prev[playerId], guessedRank: rank } }))
-          }
-          onToggleSkip={(playerId) =>
-            setAssignments((prev) => ({
-              ...prev,
-              [playerId]: {
-                ...prev[playerId],
-                skipped: !prev[playerId]?.skipped,
-                category: undefined
-              }
-            }))
-          }
-          skipLocked={hasSkipped}
-        />
+      {!gameFinished && currentPlayer && (
+        <section className="current-player">
+          <h2>Current Player</h2>
+          <article className="card">
+            <strong>{currentPlayer.name}</strong>
+            <p>{currentPlayer.club}</p>
+            <p>
+              {currentPlayer.nationality} · {currentPlayer.position}
+            </p>
+          </article>
 
-        {CATEGORIES.map((category) => (
-          <CategoryColumn
-            key={category.key}
-            title={category.label}
-            category={category}
-            players={grouped[category.key] ?? []}
-            assignments={assignments}
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(target) => draggedId && setCategoryForPlayer(draggedId, target)}
-            onDragStart={setDraggedId}
-            onRankChange={(playerId, rank) =>
-              setAssignments((prev) => ({ ...prev, [playerId]: { ...prev[playerId], guessedRank: rank } }))
-            }
-            onToggleSkip={(playerId) =>
-              setAssignments((prev) => ({
-                ...prev,
-                [playerId]: {
-                  ...prev[playerId],
-                  skipped: !prev[playerId]?.skipped,
-                  category: undefined
-                }
-              }))
-            }
-            skipLocked={hasSkipped}
-          />
-        ))}
-      </section>
+          <h3>Choose a category</h3>
+          <div className="category-buttons">
+            {CATEGORIES.map((category) => {
+              const blocked = usedCategories.has(category.key);
+              return (
+                <button
+                  key={category.key}
+                  type="button"
+                  className={blocked ? 'btn-blocked' : ''}
+                  onClick={() => assignCategory(category.key)}
+                  disabled={blocked}
+                >
+                  {category.label} {blocked ? '(blocked)' : ''}
+                </button>
+              );
+            })}
+          </div>
 
-      <div className="actions">
-        <button type="button" onClick={onSubmit}>
-          Submit Round
-        </button>
-        <button type="button" onClick={resetRound}>
-          New Round
-        </button>
-      </div>
+          <button type="button" onClick={skipPlayer} disabled={skipUsed}>
+            {skipUsed ? 'Skip already used' : 'Skip this player'}
+          </button>
+        </section>
+      )}
 
-      {results && (
+      {gameFinished && (
         <section className="results">
-          <h2>Round Reveal</h2>
+          <h2>Round Complete</h2>
+          <p>Total score: {totalScore} (lower is better)</p>
           <table>
             <thead>
               <tr>
                 <th>Player</th>
-                <th>Chosen Category</th>
-                <th>Correct Category</th>
-                <th>Guessed Rank</th>
-                <th>Correct Rank</th>
-                <th>Points</th>
+                <th>Category</th>
+                <th>Rank (Score)</th>
               </tr>
             </thead>
             <tbody>
-              {results.map((row) => (
-                <tr key={row.player.id}>
-                  <td>{row.player.name}</td>
-                  <td>{row.chosenCategory}</td>
-                  <td>{row.correctCategory}</td>
-                  <td>{row.guessedRank ?? '—'}</td>
-                  <td>{row.correctRank}</td>
-                  <td>{row.points}</td>
+              {pickedPlayers.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.name}</td>
+                  <td>{row.category}</td>
+                  <td>{row.rank}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
       )}
+
+      <section className="results">
+        <h2>Current Picks</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Club</th>
+              <th>Category</th>
+              <th>Rank</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pickedPlayers.map((row) => (
+              <tr key={`live-${row.id}`}>
+                <td>{row.name}</td>
+                <td>{row.club}</td>
+                <td>{row.category}</td>
+                <td>{row.rank}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <div className="actions">
+        <button type="button" onClick={newRound}>
+          New Round
+        </button>
+      </div>
     </main>
   );
 }

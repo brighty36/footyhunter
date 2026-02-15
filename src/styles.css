@@ -10,7 +10,7 @@ body { margin: 0; }
 
 .app {
   padding: 1rem;
-  max-width: 1400px;
+  max-width: 900px;
   margin: 0 auto;
 }
 
@@ -21,52 +21,47 @@ body { margin: 0; }
   margin-bottom: 1rem;
 }
 
-.board {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: 1fr;
-}
-
-.column {
+.current-player {
   background: #111827;
   border: 1px solid #374151;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  min-height: 260px;
-}
-
-.column__list {
-  display: grid;
-  gap: 0.5rem;
+  border-radius: 0.6rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
 }
 
 .card {
   background: #1f2937;
   border: 1px solid #4b5563;
   border-radius: 0.5rem;
-  padding: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
 }
-
-.card--skipped { opacity: 0.65; }
 
 .card p { margin: 0.25rem 0; }
 
-.card__actions {
-  display: flex;
+.category-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 0.5rem;
-  align-items: end;
-}
-
-input, button {
-  border-radius: 0.4rem;
-  border: 1px solid #6b7280;
-  padding: 0.35rem 0.45rem;
+  margin-bottom: 0.75rem;
 }
 
 button {
+  border-radius: 0.4rem;
+  border: 1px solid #6b7280;
+  padding: 0.5rem 0.6rem;
   background: #2563eb;
   color: white;
   cursor: pointer;
+}
+
+button:disabled {
+  background: #475569;
+  cursor: not-allowed;
+}
+
+.btn-blocked {
+  background: #334155;
 }
 
 .actions {
@@ -75,7 +70,10 @@ button {
   margin: 1rem 0;
 }
 
-.results { overflow-x: auto; }
+.results {
+  overflow-x: auto;
+  margin-top: 1rem;
+}
 
 table {
   border-collapse: collapse;
@@ -88,9 +86,8 @@ th, td {
   text-align: left;
 }
 
-@media (min-width: 900px) {
-  .board {
-    grid-template-columns: repeat(5, minmax(240px, 1fr));
-    align-items: start;
+@media (min-width: 720px) {
+  .category-buttons {
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
   }
 }

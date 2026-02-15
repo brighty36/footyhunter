@@ -1,7 +1,5 @@
 import type { Category } from './types';
 
-export const ROUND_SIZE = 8;
-
 export const CATEGORIES: Category[] = [
   { key: 'goals_2024', label: 'Goals (2024)' },
   { key: 'assists_2024', label: 'Assists (2024)' },
