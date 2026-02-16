@@ -37,3 +37,9 @@ npm run preview
 5. Optionally cache API responses in localStorage/sessionStorage.
 
 Because ranks are computed at runtime from the loaded dataset, no ranking endpoint is required.
+
+## Club ETL workflow (separate from the game)
+
+A reproducible Python ETL workflow has been added under `etl/` to generate `data/output/top_250_clubs.csv` from a ClubElo snapshot + Wikidata + official API connectors.
+
+See: `docs/etl_workflow.md`.
