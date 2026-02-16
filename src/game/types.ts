@@ -26,3 +26,9 @@ export type PickedRow = {
   category: CategoryKey;
   rank: number;
 };
+
+export type Assignment = {
+  category?: CategoryKey;
+  guessedRank?: number;
+  skipped?: boolean;
+};
