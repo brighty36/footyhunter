@@ -1,82 +1,77 @@
 import { useMemo, useState } from 'react';
+import { clubsData } from './data/clubs';
 import { playersData } from './data/players';
-import { BEST_SCORE_KEY, CATEGORIES } from './game/constants';
+import { BEST_SCORE_KEY_BY_MODE, getCategoriesForMode } from './game/constants';
 import { createRankMap } from './game/ranking';
-import type { CategoryKey } from './game/types';
+import type { CategoryKey, Entity, GameMode, PickedRow } from './game/types';
 import './styles.css';
 
-type PickedPlayer = {
-  id: string;
-  name: string;
-  club: string;
-  nationality: string;
-  position: string;
-  category: CategoryKey;
-  rank: number;
+const shuffle = <T,>(arr: T[]) => [...arr].sort(() => Math.random() - 0.5);
+
+const getDeckForMode = (mode: GameMode): Entity[] => (mode === 'players' ? shuffle(playersData) : shuffle(clubsData));
+
+const getBestScore = (mode: GameMode): number | null => {
+  const value = Number(localStorage.getItem(BEST_SCORE_KEY_BY_MODE[mode]));
+  return Number.isFinite(value) ? value : null;
 };
 
-const shufflePlayers = () => [...playersData].sort(() => Math.random() - 0.5);
-
-const initialBestScore = Number(localStorage.getItem(BEST_SCORE_KEY));
-
 function App() {
-  const [deck, setDeck] = useState(shufflePlayers);
+  const [mode, setMode] = useState<GameMode>('players');
+  const [deck, setDeck] = useState<Entity[]>(() => getDeckForMode('players'));
   const [currentIndex, setCurrentIndex] = useState(0);
   const [skipUsed, setSkipUsed] = useState(false);
-  const [pickedPlayers, setPickedPlayers] = useState<PickedPlayer[]>([]);
-  const [bestScore, setBestScore] = useState<number | null>(Number.isFinite(initialBestScore) ? initialBestScore : null);
+  const [pickedRows, setPickedRows] = useState<PickedRow[]>([]);
+  const [bestScore, setBestScore] = useState<number | null>(() => getBestScore('players'));
 
+  const categories = useMemo(() => getCategoriesForMode(mode), [mode]);
   const rankMaps = useMemo(
-    () => ({
-      goals_2024: createRankMap(playersData, 'goals_2024'),
-      assists_2024: createRankMap(playersData, 'assists_2024'),
-      market_value_eur: createRankMap(playersData, 'market_value_eur'),
-      caps: createRankMap(playersData, 'caps')
-    }),
-    []
-  );
+    () => Object.fromEntries(categories.map((category) => [category.key, createRankMap(deck, category.key)])),
+    [categories, deck]
+  ) as Record<CategoryKey, Map<string, number>>;
 
-  const usedCategories = new Set(pickedPlayers.map((pick) => pick.category));
-  const gameFinished = usedCategories.size === CATEGORIES.length;
-  const currentPlayer = !gameFinished ? deck[currentIndex] : null;
-  const totalScore = pickedPlayers.reduce((sum, row) => sum + row.rank, 0);
+  const usedCategories = new Set(pickedRows.map((pick) => pick.category));
+  const gameFinished = usedCategories.size === categories.length;
+  const currentEntity = !gameFinished ? deck[currentIndex] : null;
+  const totalScore = pickedRows.reduce((sum, row) => sum + row.rank, 0);
 
   const assignCategory = (category: CategoryKey) => {
-    if (!currentPlayer || usedCategories.has(category)) {
+    if (!currentEntity || usedCategories.has(category)) {
       return;
     }
 
-    const rank = rankMaps[category].get(currentPlayer.id);
+    const rank = rankMaps[category]?.get(currentEntity.id);
     if (!rank) {
       return;
     }
 
-    const nextPicks = [
-      ...pickedPlayers,
-      {
-        id: currentPlayer.id,
-        name: currentPlayer.name,
-        club: currentPlayer.club,
-        nationality: currentPlayer.nationality,
-        position: currentPlayer.position,
-        category,
-        rank
-      }
-    ];
+    const meta =
+      mode === 'players'
+        ? `${(currentEntity as typeof playersData[number]).club} · ${(currentEntity as typeof playersData[number]).position}`
+        : `${(currentEntity as typeof clubsData[number]).country} · ELO ${(currentEntity as typeof clubsData[number]).elo}`;
 
-    setPickedPlayers(nextPicks);
+    const nextRows = [...pickedRows, { id: currentEntity.id, name: currentEntity.name, meta, category, rank }];
+    setPickedRows(nextRows);
     setCurrentIndex((prev) => prev + 1);
 
-    if (nextPicks.length === CATEGORIES.length) {
-      const nextTotal = nextPicks.reduce((sum, row) => sum + row.rank, 0);
+    if (nextRows.length === categories.length) {
+      const nextTotal = nextRows.reduce((sum, row) => sum + row.rank, 0);
       if (bestScore === null || nextTotal < bestScore) {
         setBestScore(nextTotal);
-        localStorage.setItem(BEST_SCORE_KEY, String(nextTotal));
+        localStorage.setItem(BEST_SCORE_KEY_BY_MODE[mode], String(nextTotal));
       }
     }
   };
 
-  const skipPlayer = () => {
+  const switchMode = (nextMode: GameMode) => {
+    setMode(nextMode);
+    setDeck(getDeckForMode(nextMode));
+    setCurrentIndex(0);
+    setSkipUsed(false);
+    setPickedRows([]);
+    setBestScore(getBestScore(nextMode));
+  };
+
+  const skipCurrent = () => {
     if (skipUsed || gameFinished) {
       return;
     }
@@ -85,38 +80,52 @@ function App() {
   };
 
   const newRound = () => {
-    setDeck(shufflePlayers());
+    setDeck(getDeckForMode(mode));
     setCurrentIndex(0);
     setSkipUsed(false);
-    setPickedPlayers([]);
+    setPickedRows([]);
   };
 
   return (
     <main className="app">
       <header>
         <h1>FootyHunter</h1>
-        <p>Players appear one-by-one. Pick one category per player. Category locks after use.</p>
+        <p>Two game modes: Players and Clubs. Pick one category per reveal; category locks after use.</p>
+        <div className="mode-toggle">
+          <button type="button" className={mode === 'players' ? 'mode-active' : ''} onClick={() => switchMode('players')}>
+            Players Mode
+          </button>
+          <button type="button" className={mode === 'clubs' ? 'mode-active' : ''} onClick={() => switchMode('clubs')}>
+            Clubs Mode
+          </button>
+        </div>
         <div className="scorebar">
-          <span>Categories left: {CATEGORIES.length - usedCategories.size}</span>
+          <span>Mode: {mode}</span>
+          <span>Categories left: {categories.length - usedCategories.size}</span>
           <span>Skip used: {skipUsed ? 'Yes' : 'No'}</span>
           <span>Best score: {bestScore ?? '—'}</span>
         </div>
       </header>
 
-      {!gameFinished && currentPlayer && (
+      {!gameFinished && currentEntity && (
         <section className="current-player">
-          <h2>Current Player</h2>
+          <h2>Current {mode === 'players' ? 'Player' : 'Club'}</h2>
           <article className="card">
-            <strong>{currentPlayer.name}</strong>
-            <p>{currentPlayer.club}</p>
-            <p>
-              {currentPlayer.nationality} · {currentPlayer.position}
-            </p>
+            <strong>{currentEntity.name}</strong>
+            {mode === 'players' ? (
+              <p>
+                {(currentEntity as typeof playersData[number]).club} · {(currentEntity as typeof playersData[number]).nationality}
+              </p>
+            ) : (
+              <p>
+                {(currentEntity as typeof clubsData[number]).country} · QID {(currentEntity as typeof clubsData[number]).wikidata_qid}
+              </p>
+            )}
           </article>
 
           <h3>Choose a category</h3>
           <div className="category-buttons">
-            {CATEGORIES.map((category) => {
+            {categories.map((category) => {
               const blocked = usedCategories.has(category.key);
               return (
                 <button
@@ -132,8 +141,8 @@ function App() {
             })}
           </div>
 
-          <button type="button" onClick={skipPlayer} disabled={skipUsed}>
-            {skipUsed ? 'Skip already used' : 'Skip this player'}
+          <button type="button" onClick={skipCurrent} disabled={skipUsed}>
+            {skipUsed ? 'Skip already used' : `Skip this ${mode === 'players' ? 'player' : 'club'}`}
           </button>
         </section>
       )}
@@ -142,24 +151,6 @@ function App() {
         <section className="results">
           <h2>Round Complete</h2>
           <p>Total score: {totalScore} (lower is better)</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Player</th>
-                <th>Category</th>
-                <th>Rank (Score)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pickedPlayers.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.name}</td>
-                  <td>{row.category}</td>
-                  <td>{row.rank}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </section>
       )}
 
@@ -168,17 +159,17 @@ function App() {
         <table>
           <thead>
             <tr>
-              <th>Player</th>
-              <th>Club</th>
+              <th>{mode === 'players' ? 'Player' : 'Club'}</th>
+              <th>Meta</th>
               <th>Category</th>
               <th>Rank</th>
             </tr>
           </thead>
           <tbody>
-            {pickedPlayers.map((row) => (
-              <tr key={`live-${row.id}`}>
+            {pickedRows.map((row) => (
+              <tr key={`${mode}-${row.id}`}>
                 <td>{row.name}</td>
-                <td>{row.club}</td>
+                <td>{row.meta}</td>
                 <td>{row.category}</td>
                 <td>{row.rank}</td>
               </tr>
