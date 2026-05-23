@@ -35,14 +35,10 @@ function App() {
   const totalScore = pickedRows.reduce((sum, row) => sum + row.rank, 0);
 
   const assignCategory = (category: CategoryKey) => {
-    if (!currentEntity || usedCategories.has(category)) {
-      return;
-    }
+    if (!currentEntity || usedCategories.has(category)) return;
 
     const rank = rankMaps[category]?.get(currentEntity.id);
-    if (!rank) {
-      return;
-    }
+    if (!rank) return;
 
     const meta =
       mode === 'players'
@@ -72,9 +68,7 @@ function App() {
   };
 
   const skipCurrent = () => {
-    if (skipUsed || gameFinished) {
-      return;
-    }
+    if (skipUsed || gameFinished) return;
     setSkipUsed(true);
     setCurrentIndex((prev) => prev + 1);
   };
@@ -88,9 +82,14 @@ function App() {
 
   return (
     <main className="app">
-      <header>
-        <h1>FootyHunter</h1>
-        <p>Two game modes: Players and Clubs. Pick one category per reveal; category locks after use.</p>
+      <header className="hero">
+        <p className="eyebrow">FOOTYHUNTER</p>
+        <h1>Build the lowest score. One smart category pick at a time.</h1>
+        <p className="hero-copy">
+          Better data, better reads: players are now based on a cleaned 2024 performance + valuation snapshot, and clubs use the ETL
+          popularity fields already wired into the project.
+        </p>
+
         <div className="mode-toggle">
           <button type="button" className={mode === 'players' ? 'mode-active' : ''} onClick={() => switchMode('players')}>
             Players Mode
@@ -99,10 +98,11 @@ function App() {
             Clubs Mode
           </button>
         </div>
+
         <div className="scorebar">
           <span>Mode: {mode}</span>
           <span>Categories left: {categories.length - usedCategories.size}</span>
-          <span>Skip used: {skipUsed ? 'Yes' : 'No'}</span>
+          <span>Skip: {skipUsed ? 'Used' : 'Available'}</span>
           <span>Best score: {bestScore ?? '—'}</span>
         </div>
       </header>
@@ -135,7 +135,7 @@ function App() {
                   onClick={() => assignCategory(category.key)}
                   disabled={blocked}
                 >
-                  {category.label} {blocked ? '(blocked)' : ''}
+                  {category.label} {blocked ? '✓' : ''}
                 </button>
               );
             })}
